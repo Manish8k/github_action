@@ -1,3 +1,33 @@
+# name: Deploy to Minikube using GitHub Actions
+
+# on: [push]
+  
+# jobs:
+#   job1:
+#     runs-on: ubuntu-latest
+#     name: build Node.js Docker Image and deploy to minikube
+#     steps:
+#     - uses: actions/checkout@v2
+#     - name: Start minikube
+#       uses: medyagh/setup-minikube@master
+#     - name: Try the cluster !
+#       run: kubectl get pods -A
+#     - name: Build image
+#       run: |
+#           export SHELL=/bin/bash
+#           eval $(minikube -p minikube docker-env)
+#           docker build -f ./Dockerfile -t devopshint/node-app:latest .
+#           echo -n "verifying images:"
+#           docker images         
+#     - name: Deploy to minikube
+#       run:
+#         kubectl apply -f k8s-node-app.yaml
+#     - name: Test service URLs
+#       run: |
+#           minikube service list
+#           minikube service nodejs-app --url
+
+
 name: Deploy to Minikube using GitHub Actions
 
 on: [push]
@@ -8,21 +38,38 @@ jobs:
     name: build Node.js Docker Image and deploy to minikube
     steps:
     - uses: actions/checkout@v2
+
     - name: Start minikube
       uses: medyagh/setup-minikube@master
-    - name: Try the cluster !
-      run: kubectl get pods -A
-    - name: Build image
+
+    - name: Build image inside Minikube's Docker daemon
       run: |
-          export SHELL=/bin/bash
+          # This command configures the shell to use the Docker daemon inside the Minikube VM
           eval $(minikube -p minikube docker-env)
+          # Build the image, making it immediately available to Minikube without a push
           docker build -f ./Dockerfile -t devopshint/node-app:latest .
-          echo -n "verifying images:"
-          docker images         
-    - name: Deploy to minikube
-      run:
-        kubectl apply -f k8s-node-app.yaml
-    - name: Test service URLs
+          echo "--- Docker images available inside Minikube ---"
+          docker images
+
+    - name: Deploy application to Minikube
+      run: kubectl apply -f k8s-node-app.yaml
+
+    - name: Wait for deployment to be ready and add debugging
       run: |
+        # Wait for the deployment to complete. The rollout status command will exit with a non-zero code if it fails.
+        # This is a more robust way to wait than a simple 'sleep'.
+        echo "--- Waiting for deployment rollout to finish ---"
+        kubectl rollout status deployment/nodejs-app --timeout=120s
+
+        echo "--- Deployment and Pod Status ---"
+        kubectl get deployment
+        kubectl get pods
+
+        # If the script continues, the rollout was successful. Now we can test the service.
+
+    - name: Test service and get URL
+      run: |
+          echo "--- Minikube Service List ---"
           minikube service list
+          echo "--- Getting Service URL ---"
           minikube service nodejs-app --url
